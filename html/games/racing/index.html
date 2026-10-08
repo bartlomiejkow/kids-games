@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wyścigi – Nasze Gry</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 16px; background: linear-gradient(135deg, #6dd5ed, #2193b0); font-family: Arial, sans-serif; color: #193747; }
+        main { max-width: 760px; margin: auto; }
+        a { color: #193747; font-weight: bold; display: inline-block; padding: 10px 0; }
+        h1 { text-align: center; color: white; margin: 10px; }
+        .panel { background: white; padding: 18px; border-radius: 24px; text-align: center; }
+        .instructions { line-height: 1.5; margin: 8px 0; }
+        .status { font-size: 22px; font-weight: bold; min-height: 52px; margin: 14px 0; }
+        .tracks { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .racer { min-width: 0; }
+        h2 { font-size: 18px; margin: 8px 0; }
+        .road { position: relative; height: min(48vh, 350px); min-height: 220px; overflow: hidden; border: 6px solid #649548; border-radius: 14px; background: #37424c; }
+        .road::before, .road::after { content: ""; position: absolute; top: 0; bottom: 0; border-left: 3px dashed #dbe4e8; left: 33.333%; }
+        .road::after { left: 66.666%; }
+        .car, .obstacle { position: absolute; left: 50%; transform: translate(-50%, 50%); z-index: 1; }
+        .car { bottom: 16%; width: 30%; max-width: 58px; height: 62px; border-radius: 16px 16px 10px 10px; border: 4px solid #8b2424; background: #ef6464; box-shadow: -5px 8px 0 -2px #151e28, 5px 8px 0 -2px #151e28; transition: left .1s; }
+        .car::before { content: ""; position: absolute; top: 10px; left: 15%; width: 70%; height: 18px; background: #d5f4ff; border-radius: 5px; }
+        .car::after { content: ""; position: absolute; bottom: 5px; left: 15%; width: 70%; border-bottom: 4px solid #ffd968; }
+        .blue { background: #62b9f0; border-color: #205c91; }
+        .slowed { filter: grayscale(.8); }
+        .obstacle { font-size: 32px; }
+        .finish-line { position: absolute; width: 100%; height: 20px; background: repeating-conic-gradient(white 0% 25%, #141c23 0% 50%) 0 / 20px 20px; }
+        progress { width: 100%; height: 16px; accent-color: #19768c; }
+        .distance { display: block; margin: 8px 0; }
+        button { font: inherit; min-height: 52px; padding: 12px 20px; border: 2px solid transparent; border-radius: 14px; background: #167590; color: white; font-weight: bold; cursor: pointer; }
+        button:disabled { opacity: .5; cursor: default; }
+        button:focus-visible, a:focus-visible { outline: 3px solid #913c9c; outline-offset: 3px; }
+        .controls { display: flex; justify-content: center; gap: 18px; margin: 16px 0; }
+        .controls button { font-size: 28px; min-width: 100px; touch-action: manipulation; }
+        [hidden] { display: none !important; }
+        @media (max-width: 420px) {
+            body { padding: 10px; }
+            .panel { padding: 12px; }
+            .tracks { gap: 8px; }
+            .car { height: 50px; }
+            .obstacle { font-size: 26px; }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <a href="/">⬅ Wybór gier</a>
+        <h1>🏎️ Wyścigi razem</h1>
+        <section class="panel" aria-label="Wyścigi dla dwóch graczy">
+            <p class="instructions">Otwórzcie tę stronę na dwóch urządzeniach i kliknijcie „Gotowy!”.<br>Auto jedzie samo. Omijaj pachołki strzałkami ← → lub przyciskami. Pachołek spowalnia auto. Kto pierwszy dojedzie do 1000 m?</p>
+            <p id="connection" role="status"></p>
+            <p id="status" class="status" role="status" aria-live="polite">Łączymy…</p>
+            <div class="tracks">
+                <section class="racer" aria-label="Tor gracza 1">
+                    <h2 id="label0">🔴 Gracz 1</h2>
+                    <div id="road0" class="road" aria-hidden="true"><div id="car0" class="car"></div></div>
+                    <span id="distance0" class="distance">0 / 1000 m</span>
+                    <progress id="progress0" max="1000" value="0" aria-label="Dystans gracza 1"></progress>
+                </section>
+                <section class="racer" aria-label="Tor gracza 2">
+                    <h2 id="label1">🔵 Gracz 2</h2>
+                    <div id="road1" class="road" aria-hidden="true"><div id="car1" class="car blue"></div></div>
+                    <span id="distance1" class="distance">0 / 1000 m</span>
+                    <progress id="progress1" max="1000" value="0" aria-label="Dystans gracza 2"></progress>
+                </section>
+            </div>
+            <div class="controls">
+                <button id="left" aria-label="Jedź w lewo" disabled>⬅</button>
+                <button id="right" aria-label="Jedź w prawo" disabled>➡</button>
+            </div>
+            <button id="ready" disabled>🏁 Gotowy!</button>
+            <button id="restart" hidden>🔄 Rewanż</button>
+        </section>
+    </main>
+    <script>
+        let socket = null;
+        let state = null;
+        let reconnectTimer = null;
+        let lastStatus = "";
+        const status = document.getElementById("status");
+        const readyButton = document.getElementById("ready");
+        const restartButton = document.getElementById("restart");
+
+        function sendMove(move) {
+            if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(move));
+        }
+
+        function setStatus(text) {
+            if (text !== lastStatus) {
+                status.textContent = text;
+                lastStatus = text;
+            }
+        }
+
+        function render(nextState) {
+            state = nextState;
+            const bothConnected = state.connected.every(Boolean);
+            const bothReady = state.ready.every(Boolean);
+            const canSteer = bothConnected && bothReady && state.phase === "racing";
+            document.getElementById("connection").textContent = `Jesteś graczem ${state.player + 1} ${state.player === 0 ? "🔴" : "🔵"}.`;
+            document.getElementById("left").disabled = !canSteer;
+            document.getElementById("right").disabled = !canSteer;
+            readyButton.hidden = state.phase === "finished" || state.ready[state.player];
+            readyButton.disabled = false;
+            readyButton.textContent = state.phase === "racing" || state.phase === "countdown" ? "▶ Wracam do gry!" : "🏁 Gotowy!";
+            restartButton.hidden = state.phase !== "finished";
+            restartButton.disabled = false;
+            if (state.phase === "finished") {
+                setStatus(state.winners.length === 2 ? "🤝 Remis! Świetna jazda!" : `🏆 Wygrywa Gracz ${state.winners[0] + 1}!`);
+            } else if (!bothConnected) {
+                setStatus("Czekamy na drugiego gracza…");
+            } else if (!bothReady) {
+                setStatus(state.ready[state.player] ? "Czekamy, aż drugi gracz będzie gotowy." : "Kliknij „Gotowy!”, aby grać.");
+            } else if (state.phase === "countdown") {
+                setStatus(`Start za ${Math.ceil(state.countdown)}…`);
+            } else {
+                setStatus("🏁 Gaz do dechy! Omijaj pachołki!");
+            }
+            for (let player = 0; player < 2; player++) {
+                document.getElementById("label" + player).textContent = `${player === 0 ? "🔴" : "🔵"} Gracz ${player + 1}${player === state.player ? " (Ty)" : ""}`;
+                const road = document.getElementById("road" + player);
+                const car = document.getElementById("car" + player);
+                car.style.left = `${(state.lanes[player] + .5) * 100 / 3}%`;
+                car.classList.toggle("slowed", state.slow[player] > 0);
+                road.querySelectorAll(".obstacle, .finish-line").forEach(element => element.remove());
+                state.obstacles.forEach(obstacle => {
+                    const ahead = obstacle.distance - state.distances[player];
+                    if (ahead < -25 || ahead > 150) return;
+                    const cone = document.createElement("span");
+                    cone.className = "obstacle";
+                    cone.textContent = "🚧";
+                    cone.style.left = `${(obstacle.lane + .5) * 100 / 3}%`;
+                    cone.style.bottom = `${16 + ahead * .52}%`;
+                    road.appendChild(cone);
+                });
+                const remaining = state.finish - state.distances[player];
+                if (remaining < 150) {
+                    const line = document.createElement("div");
+                    line.className = "finish-line";
+                    line.style.bottom = `${16 + remaining * .52}%`;
+                    road.appendChild(line);
+                }
+                document.getElementById("distance" + player).textContent = `${Math.floor(state.distances[player])} / ${state.finish} m${state.slow[player] > 0 ? " 🐢" : ""}`;
+                document.getElementById("progress" + player).value = state.distances[player];
+            }
+        }
+
+        function steer(direction) {
+            if (state && state.phase === "racing" && state.connected.every(Boolean) && state.ready.every(Boolean)) {
+                sendMove({ type: "steer", direction });
+            }
+        }
+
+        function connect() {
+            clearTimeout(reconnectTimer);
+            socket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/racing-ws`);
+            let roomFull = false;
+            socket.onmessage = event => {
+                const data = JSON.parse(event.data);
+                if (data.error) {
+                    roomFull = true;
+                    setStatus(data.error);
+                    return;
+                }
+                render(data);
+            };
+            socket.onclose = () => {
+                state = null;
+                ["left", "right", "ready", "restart"].forEach(id => { document.getElementById(id).disabled = true; });
+                document.getElementById("connection").textContent = "Brak połączenia.";
+                if (!roomFull) {
+                    setStatus("Gra wstrzymana. Łączymy ponownie…");
+                    reconnectTimer = setTimeout(connect, 2000);
+                }
+            };
+        }
+
+        document.getElementById("left").addEventListener("click", () => steer(-1));
+        document.getElementById("right").addEventListener("click", () => steer(1));
+        document.addEventListener("keydown", event => {
+            if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && !event.altKey && !event.ctrlKey && !event.metaKey) {
+                event.preventDefault();
+                if (!event.repeat) steer(event.key === "ArrowLeft" ? -1 : 1);
+            }
+        });
+        readyButton.addEventListener("click", () => sendMove({ type: "ready" }));
+        restartButton.addEventListener("click", () => sendMove({ type: "restart" }));
+        connect();
+    </script>
+</body>
+</html>

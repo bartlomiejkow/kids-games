@@ -3,6 +3,7 @@ import asyncio
 import json
 import random
 from aiohttp import web, WSMsgType
+from racing import RacingRoom
 
 
 class Room:
@@ -70,21 +71,23 @@ class Room:
 
 
 room = Room()
+racingRoom = RacingRoom()
 
 
 async def websocket(request):
+    activeRoom = racingRoom if request.path == '/racing-ws' else room
     origin = request.headers.get("Origin")
     if origin and origin not in (f"http://{request.host}", f"https://{request.host}"):
         raise web.HTTPForbidden()
     socket = web.WebSocketResponse(heartbeat=20, max_msg_size=1024)
     await socket.prepare(request)
-    if None not in room.players:
+    if None not in activeRoom.players:
         await socket.send_json({"error": "Pokój jest pełny. Grają już dwie osoby."})
         await socket.close()
         return socket
-    player = room.players.index(None)
-    room.players[player] = socket
-    await room.broadcast()
+    player = activeRoom.players.index(None)
+    activeRoom.players[player] = socket
+    await activeRoom.broadcast()
     try:
         async for message in socket:
             if message.type == WSMsgType.TEXT:
@@ -93,16 +96,32 @@ async def websocket(request):
                 except (ValueError, TypeError):
                     continue
                 if isinstance(data, dict):
-                    await room.move(player, data)
+                    await activeRoom.move(player, data)
     finally:
-        room.players[player] = None
-        if all(s is None for s in room.players):
-            room.reset()
-        await room.broadcast()
+        activeRoom.players[player] = None
+        if isinstance(activeRoom, RacingRoom):
+            activeRoom.ready[player] = False
+        if all(s is None for s in activeRoom.players):
+            activeRoom.reset()
+        await activeRoom.broadcast()
     return socket
 
 
 app = web.Application()
 app.router.add_get('/memory-ws', websocket)
+app.router.add_get('/racing-ws', websocket)
+
+
+async def racingClock(app):
+    task = asyncio.create_task(racingRoom.run())
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+app.cleanup_ctx.append(racingClock)
 if __name__ == '__main__':
     web.run_app(app, port=8080)
