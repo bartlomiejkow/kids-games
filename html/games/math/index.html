@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matematyka – Nasze Gry</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #6dd5ed, #2193b0);
+            color: #243747;
+        }
+        main { max-width: 640px; margin: 0 auto; }
+        .back { color: #17394a; font-weight: bold; display: inline-block; padding: 12px 0; }
+        h1 { color: white; text-align: center; font-size: clamp(28px, 7vw, 42px); }
+        .game { background: white; border-radius: 25px; padding: 24px; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,.2); }
+        .progress { font-weight: bold; }
+        progress { width: 100%; height: 18px; accent-color: #167590; }
+        .equation { font-size: clamp(40px, 10vw, 64px); margin: 24px 0; font-weight: bold; }
+        .picture { background: #fff7d6; border-radius: 18px; padding: 16px; margin-bottom: 20px; }
+        .objects { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; font-size: 32px; min-height: 42px; align-items: center; }
+        .removed { opacity: .6; text-decoration: line-through; text-decoration-color: #a32626; text-decoration-thickness: 3px; }
+        .operator { font-weight: bold; font-size: 30px; }
+        .hint { margin: 12px 0 0; line-height: 1.5; }
+        .answers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        button { font: inherit; cursor: pointer; border: 2px solid transparent; border-radius: 15px; min-height: 52px; padding: 12px 16px; }
+        .answer { background: #e1f4fa; color: #174a60; font-size: 34px; font-weight: bold; }
+        button:hover:not(:disabled) { border-color: #174a60; }
+        button:focus-visible, a:focus-visible { outline: 3px solid #913c9c; outline-offset: 4px; }
+        .answer:disabled { cursor: default; opacity: .6; }
+        .answer.correct { background: #c8ffc8; color: #245524; opacity: 1; }
+        .message { min-height: 56px; margin: 20px 0 12px; font-size: 20px; line-height: 1.4; font-weight: bold; }
+        .next { background: #167590; color: white; font-weight: bold; }
+        .restart { background: #edf1f4; color: #243747; margin-top: 20px; }
+        [hidden] { display: none !important; }
+        @media (max-width: 400px) {
+            body { padding: 12px; }
+            .game { padding: 18px 14px; }
+            .answers { gap: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <a class="back" href="/">⬅ Wybór gier</a>
+        <h1>🔢 Matematyka</h1>
+        <section class="game" aria-label="Gra matematyczna">
+            <p>Dodajemy i odejmujemy do 10. Masz tyle czasu, ile potrzebujesz!</p>
+            <p id="progressText" class="progress"></p>
+            <progress id="progress" max="10" value="0" aria-label="Rozwiązane zadania"></progress>
+            <div id="question">
+                <p id="equation" class="equation"></p>
+                <div class="picture">
+                    <div id="objects" class="objects" aria-hidden="true"></div>
+                    <p id="hint" class="hint"></p>
+                </div>
+                <p>Wybierz wynik:</p>
+                <div id="answers" class="answers" role="group" aria-label="Odpowiedzi"></div>
+            </div>
+            <p id="message" class="message" role="status" aria-live="polite" aria-atomic="true"></p>
+            <button id="next" class="next" hidden>Następne zadanie ➜</button>
+            <div><button id="restart" class="restart">🔄 Nowa gra</button></div>
+        </section>
+    </main>
+    <script>
+        const totalQuestions = 10;
+        const equation = document.getElementById("equation");
+        const answers = document.getElementById("answers");
+        const message = document.getElementById("message");
+        const nextButton = document.getElementById("next");
+        let tasks = [];
+        let questionIndex = 0;
+        let solved = false;
+
+        function shuffle(items) {
+            for (let i = items.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [items[i], items[j]] = [items[j], items[i]];
+            }
+            return items;
+        }
+
+        function startGame() {
+            const additions = [];
+            const subtractions = [];
+            for (let a = 1; a <= 10; a++) {
+                for (let b = 1; b <= a; b++) {
+                    subtractions.push({ a, b, operator: "−", result: a - b });
+                }
+                for (let b = 1; b <= 10 - a; b++) {
+                    additions.push({ a, b, operator: "+", result: a + b });
+                }
+            }
+            tasks = shuffle([...shuffle(additions).slice(0, 5), ...shuffle(subtractions).slice(0, 5)]);
+            questionIndex = 0;
+            document.getElementById("question").hidden = false;
+            showQuestion();
+        }
+
+        function showQuestion() {
+            solved = false;
+            const task = tasks[questionIndex];
+            document.getElementById("progressText").textContent = `Zadanie ${questionIndex + 1} z ${totalQuestions}`;
+            document.getElementById("progress").value = questionIndex;
+            equation.textContent = `${task.a} ${task.operator} ${task.b} = ?`;
+            equation.setAttribute("aria-label", `${task.a} ${task.operator === "+" ? "plus" : "minus"} ${task.b}. Ile to jest?`);
+            const objects = document.getElementById("objects");
+            objects.replaceChildren();
+            const addObjects = (count, removed = false) => {
+                for (let i = 0; i < count; i++) {
+                    const object = document.createElement("span");
+                    object.textContent = "🍎";
+                    if (removed) object.className = "removed";
+                    objects.appendChild(object);
+                }
+            };
+            if (task.operator === "+") {
+                addObjects(task.a);
+                const plus = document.createElement("span");
+                plus.className = "operator";
+                plus.textContent = "+";
+                objects.appendChild(plus);
+                addObjects(task.b);
+            } else {
+                addObjects(task.result);
+                addObjects(task.b, true);
+            }
+            document.getElementById("hint").textContent = task.operator === "+"
+                ? `Policz wszystkie jabłka: ${task.a} i jeszcze ${task.b}.`
+                : `Było ${task.a} jabłek. Zabieramy ${task.b} przekreślonych. Ile zostało?`;
+            const alternatives = shuffle(Array.from({ length: 11 }, (_, i) => i).filter(value => value !== task.result)).slice(0, 2);
+            answers.replaceChildren();
+            shuffle([task.result, ...alternatives]).forEach(value => {
+                const button = document.createElement("button");
+                button.className = "answer";
+                button.textContent = value;
+                button.addEventListener("click", () => checkAnswer(value, button));
+                answers.appendChild(button);
+            });
+            message.textContent = "";
+            nextButton.hidden = true;
+        }
+
+        function checkAnswer(value, button) {
+            if (solved) return;
+            if (value !== tasks[questionIndex].result) {
+                button.disabled = true;
+                message.textContent = "Spróbuj jeszcze raz. Policz jabłka 🍎";
+                answers.querySelector("button:not(:disabled)").focus();
+                return;
+            }
+            solved = true;
+            button.classList.add("correct");
+            answers.querySelectorAll("button").forEach(answer => { answer.disabled = true; });
+            document.getElementById("progress").value = questionIndex + 1;
+            message.textContent = "Brawo! Dobra odpowiedź! ⭐";
+            nextButton.textContent = questionIndex === totalQuestions - 1 ? "Zobacz wynik ⭐" : "Następne zadanie ➜";
+            nextButton.hidden = false;
+            nextButton.focus();
+        }
+
+        nextButton.addEventListener("click", () => {
+            if (!solved) return;
+            questionIndex++;
+            if (questionIndex === totalQuestions) {
+                document.getElementById("question").hidden = true;
+                document.getElementById("progressText").textContent = "Rozwiązane zadania: 10 z 10";
+                message.textContent = "🎉 Udało się! Wszystkie 10 zadań rozwiązane. Świetna praca!";
+                nextButton.hidden = true;
+                document.getElementById("restart").focus();
+                return;
+            }
+            showQuestion();
+            answers.querySelector("button").focus();
+        });
+        document.getElementById("restart").addEventListener("click", () => {
+            startGame();
+            answers.querySelector("button").focus();
+        });
+        startGame();
+    </script>
+</body>
+</html>
