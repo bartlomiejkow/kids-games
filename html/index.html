@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Nasze Gry</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+
+            background: linear-gradient(
+                135deg,
+                #6dd5ed,
+                #2193b0
+            );
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            font-size: 48px;
+            margin-bottom: 40px;
+
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .games {
+            display: grid;
+
+            grid-template-columns:
+                repeat(auto-fit, minmax(250px, 1fr));
+
+            gap: 25px;
+        }
+
+        .game {
+            background: white;
+
+            border-radius: 25px;
+
+            padding: 35px 20px;
+
+            text-decoration: none;
+            color: #333;
+
+            text-align: center;
+
+            box-shadow:
+                0 8px 20px rgba(0,0,0,0.2);
+
+            transition:
+                transform 0.2s,
+                box-shadow 0.2s;
+        }
+
+        .game:hover {
+            transform: translateY(-8px) scale(1.03);
+
+            box-shadow:
+                0 15px 30px rgba(0,0,0,0.3);
+        }
+
+        .game:active {
+            transform: scale(0.97);
+        }
+
+        .icon {
+            font-size: 80px;
+            margin-bottom: 15px;
+        }
+
+        .name {
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .description {
+            margin-top: 10px;
+            font-size: 16px;
+            color: #777;
+        }
+
+        .coming-soon {
+            opacity: 0.7;
+        }
+
+        @media (max-width: 600px) {
+
+            h1 {
+                font-size: 36px;
+            }
+
+            .container {
+                padding: 20px;
+            }
+
+            .icon {
+                font-size: 65px;
+            }
+
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🎮 Nasze Gry</h1>
+
+    <div class="games">
+
+        <a class="game" href="/games/memory/">
+
+            <div class="icon">
+                🧠
+            </div>
+
+            <div class="name">
+                Memory
+            </div>
+
+            <div class="description">
+                Znajdź wszystkie pary!
+            </div>
+
+        </a>
+
+
+        <a class="game" href="/games/math/">
+
+            <div class="icon">
+                🔢
+            </div>
+
+            <div class="name">
+                Matematyka
+            </div>
+
+            <div class="description">
+                Liczymy i zdobywamy punkty
+            </div>
+
+        </a>
+
+
+        <a class="game coming-soon" href="/games/racing/">
+
+            <div class="icon">
+                🏎️
+            </div>
+
+            <div class="name">
+                Wyścigi
+            </div>
+
+            <div class="description">
+                Wkrótce
+            </div>
+
+        </a>
+
+
+        <a class="game coming-soon" href="/games/puzzle/">
+
+            <div class="icon">
+                🧩
+            </div>
+
+            <div class="name">
+                Puzzle
+            </div>
+
+            <div class="description">
+                Wkrótce
+            </div>
+
+        </a>
+
+    </div>
+
+</div>
+
+</body>
+</html>
