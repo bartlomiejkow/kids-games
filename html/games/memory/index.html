@@ -162,6 +162,11 @@ button {
     <h1>🧠 Memory</h1>
 </header>
 
+<div>
+    <button id="onlineMode" type="button">🌐 Dwa urządzenia</button>
+    <button id="localMode" type="button">🏠 Jedno urządzenie</button>
+</div>
+<p id="connection" role="status" aria-live="polite"></p>
 <div class="players">
     <div id="player0" class="player active">
         👧 Gracz 1: <strong id="score0">0</strong>
@@ -172,13 +177,13 @@ button {
     </div>
 </div>
 
-<div id="message" class="message">
+<div id="message" class="message" role="status" aria-live="polite">
     Ruch gracza 1
 </div>
 
 <div id="board" class="board"></div>
 
-<button onclick="startGame()">🔄 Nowa gra</button>
+<button id="restart" onclick="restartGame()">🔄 Nowa gra</button>
 
 <script>
 
@@ -187,6 +192,11 @@ const symbols = [
     "🐼", "🦁", "🐵", "🐧"
 ];
 
+let online = true;
+let socket = null;
+let reconnectTimer = null;
+let mismatchTimer = null;
+let onlineState = null;
 let cards = [];
 let firstCard = null;
 let secondCard = null;
@@ -210,6 +220,7 @@ function shuffle(array) {
 
 
 function startGame() {
+    clearTimeout(mismatchTimer);
 
     scores = [0, 0];
     currentPlayer = 0;
@@ -260,6 +271,13 @@ function startGame() {
 
 function flipCard(card) {
 
+    if (online) {
+        if (onlineState && onlineState.connected.every(Boolean) &&
+            onlineState.player === onlineState.turn && !onlineState.locked) {
+            sendMove({ type: "flip", index: Number(card.dataset.index) });
+        }
+        return;
+    }
     if (locked) return;
     if (card.classList.contains("flipped")) return;
     if (card.classList.contains("matched")) return;
@@ -306,7 +324,7 @@ function checkPair() {
 
     } else {
 
-        setTimeout(() => {
+        mismatchTimer = setTimeout(() => {
 
             firstCard.classList.remove("flipped");
             secondCard.classList.remove("flipped");
@@ -369,7 +387,107 @@ function finishGame() {
 }
 
 
-startGame();
+function sendMove(move) {
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(move));
+}
+
+function restartGame() {
+    if (online) sendMove({ type: "restart" });
+    else startGame();
+}
+
+function renderOnline(state) {
+    onlineState = state;
+    const board = document.getElementById("board");
+    if (board.children.length !== state.cards.length) {
+        board.replaceChildren();
+        state.cards.forEach((symbol, index) => {
+            const card = document.createElement("div");
+            card.className = "card";
+            card.dataset.index = index;
+            card.innerHTML = '<div class="card-inner"><div class="front">❓</div><div class="back-card"></div></div>';
+            card.tabIndex = 0;
+            card.setAttribute("role", "button");
+            card.addEventListener("click", () => flipCard(card));
+            card.addEventListener("keydown", event => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    flipCard(card);
+                }
+            });
+            board.appendChild(card);
+        });
+    }
+    Array.from(board.children).forEach((card, index) => {
+        card.classList.toggle("flipped", state.cards[index] !== null);
+        card.classList.toggle("matched", state.matched.includes(index));
+        // Keep the picture during the closing animation; hidden cards never arrive from the server.
+        if (state.cards[index] !== null) card.querySelector(".back-card").textContent = state.cards[index];
+        card.setAttribute("aria-label", `Karta ${index + 1}: ${state.cards[index] || "zakryta"}`);
+        card.setAttribute("aria-disabled", String(!state.connected.every(Boolean) || state.turn !== state.player || state.locked || state.cards[index] !== null));
+    });
+    scores = state.scores;
+    currentPlayer = state.turn;
+    scores.forEach((score, index) => { document.getElementById("score" + index).textContent = score; });
+    updatePlayer();
+    document.getElementById("connection").textContent = `Jesteś graczem ${state.player + 1}. ` +
+        (state.connected.every(Boolean) ? "Obaj gracze połączeni." : "Czekamy na drugiego gracza. Otwórz Memory na drugim urządzeniu.");
+    if (state.finished) finishGame();
+    else if (!state.connected.every(Boolean)) document.getElementById("message").textContent = "Czekamy na drugiego gracza…";
+    else document.getElementById("message").textContent = state.turn === state.player ? "Twój ruch!" : "Ruch drugiego gracza";
+    document.getElementById("restart").disabled = false;
+}
+
+function connectOnline() {
+    if (!online) return;
+    document.getElementById("connection").textContent = "Łączymy ze wspólnym pokojem…";
+    const currentSocket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/memory-ws`);
+    socket = currentSocket;
+    let roomFull = false;
+    currentSocket.onmessage = event => {
+        if (socket !== currentSocket || !online) return;
+        const state = JSON.parse(event.data);
+        if (state.error) {
+            roomFull = true;
+            document.getElementById("connection").textContent = state.error;
+            return;
+        }
+        renderOnline(state);
+    };
+    currentSocket.onclose = () => {
+        if (socket !== currentSocket || !online) return;
+        onlineState = null;
+        document.getElementById("restart").disabled = true;
+        document.getElementById("message").textContent = "Gra wstrzymana";
+        if (!roomFull) {
+            document.getElementById("connection").textContent = "Brak połączenia. Próbujemy ponownie…";
+            reconnectTimer = setTimeout(connectOnline, 2000);
+        }
+    };
+}
+
+function changeMode(useOnline) {
+    clearTimeout(reconnectTimer);
+    clearTimeout(mismatchTimer);
+    if (socket) { socket.onclose = null; socket.close(); socket = null; }
+    online = useOnline;
+    onlineState = null;
+    document.getElementById("onlineMode").disabled = useOnline;
+    document.getElementById("localMode").disabled = !useOnline;
+    document.getElementById("board").replaceChildren();
+    document.getElementById("restart").disabled = useOnline;
+    if (useOnline) {
+        document.getElementById("message").textContent = "Czekamy na połączenie…";
+        connectOnline();
+    } else {
+        document.getElementById("connection").textContent = "Gracie na jednym urządzeniu.";
+        startGame();
+    }
+}
+
+document.getElementById("onlineMode").addEventListener("click", () => changeMode(true));
+document.getElementById("localMode").addEventListener("click", () => changeMode(false));
+changeMode(true);
 
 </script>
 
